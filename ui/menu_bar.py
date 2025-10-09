@@ -18,6 +18,7 @@ class MenuBar:
         self.menu_bar = menu_bar
         self.recent_file_actions: list[QAction] = []
         self.theme_actions: dict[str, QAction] = {}
+        self.toc_toggle_action: QAction | None = None
 
     def setup_menus(
         self,
@@ -125,7 +126,7 @@ class MenuBar:
         on_theme_change: Callable[[str], None],
         available_themes: list[str],
         current_theme: str,
-    ) -> None:
+    ) -> QMenu:
         """
         Set up the View menu with display controls.
 
@@ -139,6 +140,9 @@ class MenuBar:
             on_theme_change: Callback for theme changes (receives theme name)
             available_themes: List of available theme names
             current_theme: Currently active theme name
+
+        Returns:
+            The created View menu
         """
         view_menu = self.menu_bar.addMenu("&View")
 
@@ -200,6 +204,8 @@ class MenuBar:
             theme_menu.addAction(action)
             self.theme_actions[theme_name] = action
 
+        return view_menu
+
     def update_theme_selection(self, theme_name: str) -> None:
         """
         Update which theme is checked in the menu.
@@ -209,3 +215,53 @@ class MenuBar:
         """
         for name, action in self.theme_actions.items():
             action.setChecked(name == theme_name)
+
+    def setup_edit_menu(self, on_find: Callable[[], None]) -> None:
+        """
+        Set up the Edit menu with search functionality.
+
+        Args:
+            on_find: Callback for Find action
+        """
+        edit_menu = self.menu_bar.addMenu("&Edit")
+
+        # Find action
+        find_action = QAction("&Find...", self.menu_bar)
+        find_action.setShortcut(QKeySequence.StandardKey.Find)
+        find_action.setStatusTip("Search for text in the document")
+        find_action.triggered.connect(on_find)
+        edit_menu.addAction(find_action)
+
+    def add_toc_toggle(
+        self, view_menu: QMenu, on_toggle: Callable[[bool], None], is_visible: bool
+    ) -> None:
+        """
+        Add TOC visibility toggle to View menu.
+
+        Args:
+            view_menu: The View menu to add the toggle to
+            on_toggle: Callback for TOC toggle (receives visibility state)
+            is_visible: Initial TOC visibility state
+        """
+        # Add separator before TOC toggle
+        view_menu.addSeparator()
+
+        # Create TOC toggle action
+        self.toc_toggle_action = QAction("Show &Table of Contents", self.menu_bar)
+        self.toc_toggle_action.setCheckable(True)
+        self.toc_toggle_action.setChecked(is_visible)
+        self.toc_toggle_action.setShortcut("Ctrl+T")
+        self.toc_toggle_action.setStatusTip("Toggle table of contents sidebar")
+        self.toc_toggle_action.triggered.connect(on_toggle)
+
+        view_menu.addAction(self.toc_toggle_action)
+
+    def update_toc_toggle(self, is_visible: bool) -> None:
+        """
+        Update the TOC toggle state.
+
+        Args:
+            is_visible: Whether TOC is visible
+        """
+        if self.toc_toggle_action:
+            self.toc_toggle_action.setChecked(is_visible)

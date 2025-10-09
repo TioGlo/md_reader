@@ -41,6 +41,8 @@ class SettingsManager:
                 "theme": "light",
                 "font_size": 14,
                 "zoom_level": 100,
+                "toc_visible": True,
+                "toc_width": 250,
             },
         }
 

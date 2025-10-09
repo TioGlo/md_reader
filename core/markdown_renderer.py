@@ -3,6 +3,8 @@
 import markdown2
 from pygments.formatters import HtmlFormatter
 
+from core.toc_generator import TOCGenerator
+
 
 class MarkdownRenderer:
     """Converts markdown text to HTML."""
@@ -22,6 +24,12 @@ class MarkdownRenderer:
         # Current rendering settings
         self.theme_css = ""
         self.font_size = 14
+
+        # TOC generator for header anchors
+        self.toc_generator = TOCGenerator()
+
+        # Store current TOC structure
+        self.current_toc: list = []
 
     def set_theme_css(self, theme_css: str) -> None:
         """
@@ -51,9 +59,15 @@ class MarkdownRenderer:
         Returns:
             HTML string with basic styling
         """
+        # Generate TOC structure and store it
+        self.current_toc = self.toc_generator.generate_toc(markdown_text)
+
+        # Inject anchors into headers for TOC linking
+        markdown_with_anchors = self.toc_generator.inject_anchors(markdown_text)
+
         # Convert markdown to HTML with syntax highlighting enabled
         html_content = markdown2.markdown(
-            markdown_text,
+            markdown_with_anchors,
             extras=self.extras + ["fenced-code-blocks", "code-color"]
         )
 
@@ -72,6 +86,7 @@ class MarkdownRenderer:
             max-width: 900px;
             margin: 0 auto;
             font-size: {self.font_size}px;
+            scroll-behavior: smooth;
         }}
         h1, h2, h3, h4, h5, h6 {{
             margin-top: 24px;
@@ -82,6 +97,11 @@ class MarkdownRenderer:
         h1 {{ font-size: 2em; border-bottom: 1px solid; padding-bottom: 0.3em; }}
         h2 {{ font-size: 1.5em; border-bottom: 1px solid; padding-bottom: 0.3em; }}
         h3 {{ font-size: 1.25em; }}
+        /* Anchor links should be invisible */
+        h1 a, h2 a, h3 a, h4 a, h5 a, h6 a {{
+            text-decoration: none;
+            color: inherit;
+        }}
         code {{
             padding: 0.2em 0.4em;
             border-radius: 3px;
@@ -147,3 +167,12 @@ class MarkdownRenderer:
 </html>
 """
         return full_html
+
+    def get_toc(self) -> list:
+        """
+        Get the table of contents for the currently rendered document.
+
+        Returns:
+            Hierarchical list of TOC items
+        """
+        return self.current_toc

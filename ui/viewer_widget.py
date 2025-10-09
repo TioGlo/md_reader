@@ -74,3 +74,40 @@ class ViewerWidget(QWebEngineView):
             Current zoom percentage (100 = 100%)
         """
         return int(self.zoomFactor() * 100)
+
+    def scroll_to_anchor(self, anchor: str) -> None:
+        """
+        Scroll to a specific anchor in the document.
+
+        Args:
+            anchor: Anchor ID to scroll to
+        """
+        # Execute JavaScript to scroll to the anchor
+        scroll_script = f"""
+            var element = document.getElementById('{anchor}');
+            if (element) {{
+                element.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+            }}
+        """
+        self.page().runJavaScript(scroll_script)
+
+    def find_text(self, text: str, case_sensitive: bool = False, backward: bool = False) -> None:
+        """
+        Search for text in the document.
+
+        Args:
+            text: Text to search for
+            case_sensitive: Whether search should be case-sensitive
+            backward: Whether to search backward (previous occurrence)
+        """
+        from PyQt6.QtWebEngineCore import QWebEnginePage
+
+        # Build find flags
+        flags = QWebEnginePage.FindFlag(0)
+        if case_sensitive:
+            flags |= QWebEnginePage.FindFlag.FindCaseSensitively
+        if backward:
+            flags |= QWebEnginePage.FindFlag.FindBackward
+
+        # Perform search
+        self.findText(text, flags)

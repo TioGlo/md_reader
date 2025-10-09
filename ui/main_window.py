@@ -1,6 +1,6 @@
 """Main application window."""
 
-from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QSplitter, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt
 
 from core.markdown_renderer import MarkdownRenderer
@@ -9,6 +9,8 @@ from config.settings_manager import SettingsManager
 from config.theme_manager import ThemeManager
 from ui.viewer_widget import ViewerWidget
 from ui.menu_bar import MenuBar
+from ui.toc_widget import TOCWidget
+from ui.search_dialog import SearchDialog
 
 
 class MainWindow(QMainWindow):
@@ -28,6 +30,11 @@ class MainWindow(QMainWindow):
         self.current_theme = self.settings.get("ui.theme", "light")
         self.font_size = self.settings.get("ui.font_size", 14)
         self.zoom_level = self.settings.get("ui.zoom_level", 100)
+        self.toc_visible = self.settings.get("ui.toc_visible", True)
+        self.toc_width = self.settings.get("ui.toc_width", 250)
+
+        # Search dialog
+        self.search_dialog: SearchDialog | None = None
 
         # Set up UI
         self._init_ui()
@@ -38,9 +45,30 @@ class MainWindow(QMainWindow):
         """Initialize the user interface."""
         self.setWindowTitle("Markdown Reader")
 
+        # Create main splitter with TOC and viewer
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Create TOC widget
+        self.toc_widget = TOCWidget()
+        self.toc_widget.setMinimumWidth(150)
+        self.toc_widget.setMaximumWidth(400)
+        self.toc_widget.anchor_clicked.connect(self._on_toc_item_clicked)
+
         # Create viewer widget
         self.viewer = ViewerWidget()
-        self.setCentralWidget(self.viewer)
+
+        # Add widgets to splitter
+        self.splitter.addWidget(self.toc_widget)
+        self.splitter.addWidget(self.viewer)
+
+        # Set splitter sizes
+        self.splitter.setSizes([self.toc_width, 1000 - self.toc_width])
+
+        # Set TOC visibility
+        self.toc_widget.setVisible(self.toc_visible)
+
+        # Set splitter as central widget
+        self.setCentralWidget(self.splitter)
 
         # Set up menu bar
         self.menu_bar_manager = MenuBar(self.menuBar())
@@ -54,8 +82,11 @@ class MainWindow(QMainWindow):
         recent_files = self.settings.get_recent_files()
         self.menu_bar_manager.update_recent_files(recent_files, self._on_open_recent_file)
 
+        # Set up Edit menu
+        self.menu_bar_manager.setup_edit_menu(on_find=self._on_find)
+
         # Set up View menu
-        self.menu_bar_manager.setup_view_menu(
+        view_menu = self.menu_bar_manager.setup_view_menu(
             on_increase_font=self._on_increase_font,
             on_decrease_font=self._on_decrease_font,
             on_reset_font=self._on_reset_font,
@@ -65,6 +96,11 @@ class MainWindow(QMainWindow):
             on_theme_change=self._on_theme_change,
             available_themes=self.theme_manager.get_available_themes(),
             current_theme=self.current_theme,
+        )
+
+        # Add TOC toggle to View menu
+        self.menu_bar_manager.add_toc_toggle(
+            view_menu=view_menu, on_toggle=self._on_toc_toggle, is_visible=self.toc_visible
         )
 
         # Show welcome message
@@ -172,6 +208,10 @@ class MainWindow(QMainWindow):
             recent_files = self.settings.get_recent_files()
             self.menu_bar_manager.update_recent_files(recent_files, self._on_open_recent_file)
 
+            # Update TOC
+            toc_items = self.renderer.get_toc()
+            self.toc_widget.update_toc(toc_items)
+
         except FileNotFoundError:
             QMessageBox.warning(
                 self, "File Not Found", f"The file could not be found:\n{file_path}"
@@ -273,6 +313,58 @@ class MainWindow(QMainWindow):
         self.menu_bar_manager.update_theme_selection(theme_name)
         self._apply_display_settings()
 
+    def _on_toc_item_clicked(self, anchor: str) -> None:
+        """
+        Handle TOC item click.
+
+        Args:
+            anchor: Anchor ID to scroll to
+        """
+        self.viewer.scroll_to_anchor(anchor)
+
+    def _on_toc_toggle(self, is_visible: bool) -> None:
+        """
+        Handle TOC visibility toggle.
+
+        Args:
+            is_visible: New visibility state
+        """
+        self.toc_visible = is_visible
+        self.toc_widget.setVisible(is_visible)
+        self.settings.set("ui.toc_visible", is_visible)
+        self.settings.save_settings()
+
+    def _on_find(self) -> None:
+        """Handle Find action (Ctrl+F)."""
+        # Create search dialog if it doesn't exist
+        if self.search_dialog is None:
+            self.search_dialog = SearchDialog(self)
+            self.search_dialog.find_next.connect(self._on_search_next)
+            self.search_dialog.find_previous.connect(self._on_search_previous)
+
+        # Show and focus the dialog
+        self.search_dialog.show_and_focus()
+
+    def _on_search_next(self, search_text: str, case_sensitive: bool) -> None:
+        """
+        Handle find next search.
+
+        Args:
+            search_text: Text to search for
+            case_sensitive: Whether search is case-sensitive
+        """
+        self.viewer.find_text(search_text, case_sensitive, backward=False)
+
+    def _on_search_previous(self, search_text: str, case_sensitive: bool) -> None:
+        """
+        Handle find previous search.
+
+        Args:
+            search_text: Text to search for
+            case_sensitive: Whether search is case-sensitive
+        """
+        self.viewer.find_text(search_text, case_sensitive, backward=True)
+
     def closeEvent(self, event) -> None:
         """
         Handle window close event to save state.
@@ -288,6 +380,13 @@ class MainWindow(QMainWindow):
             self.settings.set("window.y", self.y())
 
         self.settings.set("window.maximized", self.isMaximized())
+
+        # Save TOC width if visible
+        if self.toc_visible:
+            sizes = self.splitter.sizes()
+            if sizes[0] > 0:
+                self.settings.set("ui.toc_width", sizes[0])
+
         self.settings.save_settings()
 
         event.accept()
