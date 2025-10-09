@@ -55,3 +55,22 @@ class ViewerWidget(QWebEngineView):
         # This is called when a link is clicked
         # We'll handle external links in acceptNavigationRequest instead
         return self
+
+    def set_zoom_level(self, zoom_percent: int) -> None:
+        """
+        Set the zoom level for the page.
+
+        Args:
+            zoom_percent: Zoom percentage (100 = 100%, 200 = 200%, etc.)
+        """
+        zoom_factor = zoom_percent / 100.0
+        self.setZoomFactor(zoom_factor)
+
+    def get_zoom_level(self) -> int:
+        """
+        Get the current zoom level.
+
+        Returns:
+            Current zoom percentage (100 = 100%)
+        """
+        return int(self.zoomFactor() * 100)

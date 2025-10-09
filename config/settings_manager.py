@@ -37,6 +37,11 @@ class SettingsManager:
             "window": {"width": 1000, "height": 700, "x": 100, "y": 100, "maximized": False},
             "recent_files": [],
             "max_recent_files": 5,
+            "ui": {
+                "theme": "light",
+                "font_size": 14,
+                "zoom_level": 100,
+            },
         }
 
     def save_settings(self) -> None:

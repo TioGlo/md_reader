@@ -1,7 +1,7 @@
 """Menu bar for the main window."""
 
-from PyQt6.QtWidgets import QMenuBar
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtWidgets import QMenuBar, QMenu
+from PyQt6.QtGui import QAction, QKeySequence, QActionGroup
 from typing import Callable
 
 
@@ -17,6 +17,7 @@ class MenuBar:
         """
         self.menu_bar = menu_bar
         self.recent_file_actions: list[QAction] = []
+        self.theme_actions: dict[str, QAction] = {}
 
     def setup_menus(
         self,
@@ -112,3 +113,99 @@ class MenuBar:
 
                 self.recent_files_menu.addAction(action)
                 self.recent_file_actions.append(action)
+
+    def setup_view_menu(
+        self,
+        on_increase_font: Callable[[], None],
+        on_decrease_font: Callable[[], None],
+        on_reset_font: Callable[[], None],
+        on_zoom_in: Callable[[], None],
+        on_zoom_out: Callable[[], None],
+        on_reset_zoom: Callable[[], None],
+        on_theme_change: Callable[[str], None],
+        available_themes: list[str],
+        current_theme: str,
+    ) -> None:
+        """
+        Set up the View menu with display controls.
+
+        Args:
+            on_increase_font: Callback for increasing font size
+            on_decrease_font: Callback for decreasing font size
+            on_reset_font: Callback for resetting font size
+            on_zoom_in: Callback for zooming in
+            on_zoom_out: Callback for zooming out
+            on_reset_zoom: Callback for resetting zoom
+            on_theme_change: Callback for theme changes (receives theme name)
+            available_themes: List of available theme names
+            current_theme: Currently active theme name
+        """
+        view_menu = self.menu_bar.addMenu("&View")
+
+        # Font Size submenu
+        font_menu = view_menu.addMenu("Font Size")
+
+        increase_font_action = QAction("Increase", self.menu_bar)
+        increase_font_action.setShortcut("Ctrl++")
+        increase_font_action.triggered.connect(on_increase_font)
+        font_menu.addAction(increase_font_action)
+
+        decrease_font_action = QAction("Decrease", self.menu_bar)
+        decrease_font_action.setShortcut("Ctrl+-")
+        decrease_font_action.triggered.connect(on_decrease_font)
+        font_menu.addAction(decrease_font_action)
+
+        font_menu.addSeparator()
+
+        reset_font_action = QAction("Reset", self.menu_bar)
+        reset_font_action.setShortcut("Ctrl+0")
+        reset_font_action.triggered.connect(on_reset_font)
+        font_menu.addAction(reset_font_action)
+
+        # Zoom submenu
+        zoom_menu = view_menu.addMenu("Zoom")
+
+        zoom_in_action = QAction("Zoom In", self.menu_bar)
+        zoom_in_action.setShortcut("Ctrl+=")
+        zoom_in_action.triggered.connect(on_zoom_in)
+        zoom_menu.addAction(zoom_in_action)
+
+        zoom_out_action = QAction("Zoom Out", self.menu_bar)
+        zoom_out_action.setShortcut("Ctrl+_")
+        zoom_out_action.triggered.connect(on_zoom_out)
+        zoom_menu.addAction(zoom_out_action)
+
+        zoom_menu.addSeparator()
+
+        reset_zoom_action = QAction("Reset Zoom", self.menu_bar)
+        reset_zoom_action.setShortcut("Ctrl+)")
+        reset_zoom_action.triggered.connect(on_reset_zoom)
+        zoom_menu.addAction(reset_zoom_action)
+
+        # Theme submenu
+        view_menu.addSeparator()
+        theme_menu = view_menu.addMenu("Theme")
+
+        # Create action group for themes (only one can be checked at a time)
+        theme_group = QActionGroup(self.menu_bar)
+        theme_group.setExclusive(True)
+
+        for theme_name in available_themes:
+            action = QAction(theme_name.capitalize(), self.menu_bar)
+            action.setCheckable(True)
+            action.setChecked(theme_name == current_theme)
+            action.triggered.connect(lambda checked, t=theme_name: on_theme_change(t))
+
+            theme_group.addAction(action)
+            theme_menu.addAction(action)
+            self.theme_actions[theme_name] = action
+
+    def update_theme_selection(self, theme_name: str) -> None:
+        """
+        Update which theme is checked in the menu.
+
+        Args:
+            theme_name: Name of the theme to mark as selected
+        """
+        for name, action in self.theme_actions.items():
+            action.setChecked(name == theme_name)

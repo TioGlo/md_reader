@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt
 from core.markdown_renderer import MarkdownRenderer
 from core.document_manager import DocumentManager
 from config.settings_manager import SettingsManager
+from config.theme_manager import ThemeManager
 from ui.viewer_widget import ViewerWidget
 from ui.menu_bar import MenuBar
 
@@ -21,10 +22,17 @@ class MainWindow(QMainWindow):
         self.renderer = MarkdownRenderer()
         self.document_manager = DocumentManager()
         self.settings = SettingsManager()
+        self.theme_manager = ThemeManager()
+
+        # Display state
+        self.current_theme = self.settings.get("ui.theme", "light")
+        self.font_size = self.settings.get("ui.font_size", 14)
+        self.zoom_level = self.settings.get("ui.zoom_level", 100)
 
         # Set up UI
         self._init_ui()
         self._restore_window_state()
+        self._apply_display_settings()
 
     def _init_ui(self) -> None:
         """Initialize the user interface."""
@@ -45,6 +53,19 @@ class MainWindow(QMainWindow):
         # Update recent files menu
         recent_files = self.settings.get_recent_files()
         self.menu_bar_manager.update_recent_files(recent_files, self._on_open_recent_file)
+
+        # Set up View menu
+        self.menu_bar_manager.setup_view_menu(
+            on_increase_font=self._on_increase_font,
+            on_decrease_font=self._on_decrease_font,
+            on_reset_font=self._on_reset_font,
+            on_zoom_in=self._on_zoom_in,
+            on_zoom_out=self._on_zoom_out,
+            on_reset_zoom=self._on_reset_zoom,
+            on_theme_change=self._on_theme_change,
+            available_themes=self.theme_manager.get_available_themes(),
+            current_theme=self.current_theme,
+        )
 
         # Show welcome message
         self._show_welcome_message()
@@ -180,6 +201,77 @@ class MainWindow(QMainWindow):
 
         if self.settings.get("window.maximized", False):
             self.showMaximized()
+
+    def _apply_display_settings(self) -> None:
+        """Apply theme, font size, and zoom settings."""
+        # Load and set theme
+        theme_css = self.theme_manager.get_theme_css(self.current_theme)
+        self.renderer.set_theme_css(theme_css)
+        self.renderer.set_font_size(self.font_size)
+
+        # Set zoom level
+        self.viewer.set_zoom_level(self.zoom_level)
+
+        # Re-render current document if one is loaded
+        if self.document_manager.current_content:
+            html = self.renderer.render(self.document_manager.current_content)
+            self.viewer.load_html_content(html)
+
+    def _on_increase_font(self) -> None:
+        """Increase font size."""
+        self.font_size = min(self.font_size + 2, 32)
+        self.settings.set("ui.font_size", self.font_size)
+        self.settings.save_settings()
+        self._apply_display_settings()
+
+    def _on_decrease_font(self) -> None:
+        """Decrease font size."""
+        self.font_size = max(self.font_size - 2, 8)
+        self.settings.set("ui.font_size", self.font_size)
+        self.settings.save_settings()
+        self._apply_display_settings()
+
+    def _on_reset_font(self) -> None:
+        """Reset font size to default."""
+        self.font_size = 14
+        self.settings.set("ui.font_size", self.font_size)
+        self.settings.save_settings()
+        self._apply_display_settings()
+
+    def _on_zoom_in(self) -> None:
+        """Zoom in."""
+        self.zoom_level = min(self.zoom_level + 10, 400)
+        self.settings.set("ui.zoom_level", self.zoom_level)
+        self.settings.save_settings()
+        self.viewer.set_zoom_level(self.zoom_level)
+
+    def _on_zoom_out(self) -> None:
+        """Zoom out."""
+        self.zoom_level = max(self.zoom_level - 10, 25)
+        self.settings.set("ui.zoom_level", self.zoom_level)
+        self.settings.save_settings()
+        self.viewer.set_zoom_level(self.zoom_level)
+
+    def _on_reset_zoom(self) -> None:
+        """Reset zoom to 100%."""
+        self.zoom_level = 100
+        self.settings.set("ui.zoom_level", self.zoom_level)
+        self.settings.save_settings()
+        self.viewer.set_zoom_level(self.zoom_level)
+
+    def _on_theme_change(self, theme_name: str) -> None:
+        """
+        Handle theme change.
+
+        Args:
+            theme_name: Name of the new theme
+        """
+        self.current_theme = theme_name
+        self.settings.set("ui.theme", theme_name)
+        self.settings.save_settings()
+        self.theme_manager.set_current_theme(theme_name)
+        self.menu_bar_manager.update_theme_selection(theme_name)
+        self._apply_display_settings()
 
     def closeEvent(self, event) -> None:
         """
