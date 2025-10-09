@@ -1,0 +1,108 @@
+{
+  "commands": {
+    "auto_update": false,
+    "enabled": true,
+    "version": "4.2.0"
+  },
+  "components": {
+    "agents": {
+      "agents_count": 16,
+      "agents_list": [
+        "backend-architect.md",
+        "business-panel-experts.md",
+        "deep-research-agent.md",
+        "devops-architect.md",
+        "frontend-architect.md",
+        "learning-guide.md",
+        "performance-engineer.md",
+        "python-expert.md",
+        "quality-engineer.md",
+        "refactoring-expert.md",
+        "requirements-analyst.md",
+        "root-cause-analyst.md",
+        "security-engineer.md",
+        "socratic-mentor.md",
+        "system-architect.md",
+        "technical-writer.md"
+      ],
+      "category": "agents",
+      "installed_at": "2025-10-09T15:22:11.256593",
+      "version": "4.2.0"
+    },
+    "commands": {
+      "category": "commands",
+      "files_count": 25,
+      "installed_at": "2025-10-09T15:22:11.251708",
+      "version": "4.2.0"
+    },
+    "core": {
+      "category": "core",
+      "files_count": 6,
+      "installed_at": "2025-10-09T15:22:11.242335",
+      "version": "4.2.0"
+    },
+    "mcp": {
+      "category": "integration",
+      "installed_at": "2025-10-09T15:23:25.270776",
+      "installed_servers": [
+        "magic",
+        "tavily",
+        "context7",
+        "sequential-thinking",
+        "serena",
+        "playwright",
+        "morphllm-fast-apply"
+      ],
+      "servers_count": 7,
+      "version": "4.2.0"
+    },
+    "mcp_docs": {
+      "files_count": 8,
+      "installed": true,
+      "servers_documented": [
+        "magic",
+        "tavily",
+        "context7",
+        "morphllm",
+        "sequential-thinking",
+        "serena",
+        "playwright",
+        "morphllm-fast-apply"
+      ],
+      "version": "4.2.0"
+    },
+    "modes": {
+      "files_count": 7,
+      "installed": true,
+      "version": "4.2.0"
+    }
+  },
+  "framework": {
+    "components": [
+      "core"
+    ],
+    "description": "AI-enhanced development framework for Claude Code",
+    "installation_type": "global",
+    "name": "SuperClaude",
+    "version": "4.2.0"
+  },
+  "mcp": {
+    "auto_update": false,
+    "enabled": true,
+    "servers": [
+      "magic",
+      "tavily",
+      "context7",
+      "sequential-thinking",
+      "serena",
+      "playwright",
+      "morphllm-fast-apply"
+    ]
+  },
+  "superclaude": {
+    "auto_update": false,
+    "enabled": true,
+    "profile": "default",
+    "version": "4.2.0"
+  }
+}
