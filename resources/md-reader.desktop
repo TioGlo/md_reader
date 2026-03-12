@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Markdown Reader
+Comment=A simple GUI markdown viewer
+Exec=md-reader %f
+Icon=md-reader
+Terminal=false
+Type=Application
+Categories=Office;Viewer;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;viewer;reader;md;
