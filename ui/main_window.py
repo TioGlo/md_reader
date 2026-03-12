@@ -366,6 +366,81 @@ class MainWindow(QMainWindow):
 
         self.export_manager.export_pdf(self.viewer, file_path, callback=_on_pdf_finished)
 
+    def _generate_print_pdf(self) -> str | None:
+        """Generate a temporary PDF from the current page for printing.
+
+        Returns:
+            Path to the temporary PDF file, or None on failure.
+        """
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        loop = QEventLoop()
+        self.viewer.page().printToPdf(tmp_path)
+        self.viewer.page().pdfPrintingFinished.connect(lambda _path, _ok: loop.quit())
+        loop.exec()
+        try:
+            self.viewer.page().pdfPrintingFinished.disconnect()
+        except TypeError:
+            pass
+
+        import os
+        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+            return tmp_path
+        return None
+
+    def _paint_pdf_to_printer(self, printer: QPrinter, pdf_path: str) -> None:
+        """Paint a PDF file onto a QPrinter."""
+        from PyQt6.QtGui import QPainter, QImage
+        from PyQt6.QtCore import QRectF, QSizeF
+
+        # Use poppler via QtPdf if available, otherwise fall back to QImage-based approach
+        try:
+            from PyQt6.QtPdf import QPdfDocument
+            doc = QPdfDocument(None)
+            doc.load(pdf_path)
+
+            painter = QPainter(printer)
+            for i in range(doc.pageCount()):
+                if i > 0:
+                    printer.newPage()
+                page_size = doc.pagePointSize(i)
+                target = painter.viewport()
+                image = doc.render(i, target.size())
+                painter.drawImage(target, image)
+            painter.end()
+            doc.close()
+        except ImportError:
+            # Fallback: render PDF pages as images using poppler-utils (pdftoppm)
+            import subprocess
+            import tempfile
+            import glob
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                subprocess.run(
+                    ["pdftoppm", "-png", "-r", "300", pdf_path, f"{tmpdir}/page"],
+                    check=True, capture_output=True,
+                )
+                pages = sorted(glob.glob(f"{tmpdir}/page-*.png"))
+                if not pages:
+                    return
+
+                painter = QPainter(printer)
+                for i, page_path in enumerate(pages):
+                    if i > 0:
+                        printer.newPage()
+                    image = QImage(page_path)
+                    target = painter.viewport()
+                    scaled = image.scaled(
+                        target.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    painter.drawImage(0, 0, scaled)
+                painter.end()
+
     def _on_print(self) -> None:
         """Handle File > Print action."""
         if not self.document_manager.current_content:
@@ -381,9 +456,11 @@ class MainWindow(QMainWindow):
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintDialog(printer, self)
         if dialog.exec() == QPrintDialog.DialogCode.Accepted:
-            loop = QEventLoop()
-            self.viewer.page().print(printer, lambda _success: loop.quit())
-            loop.exec()
+            pdf_path = self._generate_print_pdf()
+            if pdf_path:
+                self._paint_pdf_to_printer(printer, pdf_path)
+                import os
+                os.unlink(pdf_path)
 
     def _on_print_preview(self) -> None:
         """Handle File > Print Preview action."""
@@ -395,18 +472,24 @@ class MainWindow(QMainWindow):
             )
             return
 
+        # Generate a temp PDF once, reuse for all preview paint requests
+        pdf_path = self._generate_print_pdf()
+        if not pdf_path:
+            QMessageBox.critical(self, "Print Error", "Failed to generate print content.")
+            return
+
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintPreviewDialog(printer, self)
         dialog.setWindowTitle("Print Preview")
 
         def handle_paint_requested(req_printer: QPrinter) -> None:
-            """Render the web page to the printer synchronously using an event loop."""
-            loop = QEventLoop()
-            self.viewer.page().print(req_printer, lambda _success: loop.quit())
-            loop.exec()
+            self._paint_pdf_to_printer(req_printer, pdf_path)
 
         dialog.paintRequested.connect(handle_paint_requested)
         dialog.exec()
+
+        import os
+        os.unlink(pdf_path)
 
     def _save_scroll_position(self) -> None:
         """Save scroll position for the current file."""
