@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QSplitter
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 
 from core.markdown_renderer import MarkdownRenderer
 from core.document_manager import DocumentManager
@@ -116,6 +116,10 @@ class MainWindow(QMainWindow):
         self.fullscreen_action.setCheckable(True)
         self.fullscreen_action.triggered.connect(self._on_toggle_fullscreen)
         view_menu.addAction(self.fullscreen_action)
+
+        # Escape shortcut to exit fullscreen
+        self.escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self.escape_shortcut.activated.connect(self._on_escape)
 
         # Show welcome message
         self._show_welcome_message()
@@ -407,13 +411,11 @@ class MainWindow(QMainWindow):
                 self.toc_widget.show()
             self.showNormal()
 
-    def keyPressEvent(self, event) -> None:
-        """Handle key press events for fullscreen exit."""
-        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+    def _on_escape(self) -> None:
+        """Handle Escape key — exit fullscreen if active."""
+        if self.isFullScreen():
             self.fullscreen_action.setChecked(False)
             self._on_toggle_fullscreen(False)
-        else:
-            super().keyPressEvent(event)
 
     def _on_find(self) -> None:
         """Handle Find action (Ctrl+F)."""
