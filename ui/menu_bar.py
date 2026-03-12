@@ -105,12 +105,14 @@ class MenuBar:
 
     def setup_print_menu(
         self,
+        on_print: Callable[[], None],
         on_print_preview: Callable[[], None],
     ) -> None:
         """
-        Add Print Preview action to the File menu after the export items.
+        Add Print and Print Preview actions to the File menu after the export items.
 
         Args:
+            on_print: Callback for Print action
             on_print_preview: Callback for Print Preview action
         """
         if self.file_menu is None:
@@ -124,14 +126,21 @@ class MenuBar:
                 insert_before = action
                 break
 
+        print_action = QAction("&Print...", self.menu_bar)
+        print_action.setShortcut("Ctrl+P")
+        print_action.setStatusTip("Print the current document")
+        print_action.triggered.connect(on_print)
+
         print_preview_action = QAction("Print Pre&view...", self.menu_bar)
-        print_preview_action.setShortcut("Ctrl+P")
+        print_preview_action.setShortcut("Ctrl+Shift+V")
         print_preview_action.setStatusTip("Preview and print the current document")
         print_preview_action.triggered.connect(on_print_preview)
 
         if insert_before is not None:
+            self.file_menu.insertAction(insert_before, print_action)
             self.file_menu.insertAction(insert_before, print_preview_action)
         else:
+            self.file_menu.addAction(print_action)
             self.file_menu.addAction(print_preview_action)
 
     def update_recent_files(

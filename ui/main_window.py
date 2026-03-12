@@ -139,8 +139,9 @@ class MainWindow(QMainWindow):
             on_export_pdf=self._on_export_pdf,
         )
 
-        # Set up print preview action in File menu
+        # Set up print actions in File menu
         self.menu_bar_manager.setup_print_menu(
+            on_print=self._on_print,
             on_print_preview=self._on_print_preview,
         )
 
@@ -364,6 +365,25 @@ class MainWindow(QMainWindow):
                 )
 
         self.export_manager.export_pdf(self.viewer, file_path, callback=_on_pdf_finished)
+
+    def _on_print(self) -> None:
+        """Handle File > Print action."""
+        if not self.document_manager.current_content:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before printing.",
+            )
+            return
+
+        from PyQt6.QtPrintSupport import QPrintDialog
+
+        printer = QPrinter(QPrinter.Mode.HighResolution)
+        dialog = QPrintDialog(printer, self)
+        if dialog.exec() == QPrintDialog.DialogCode.Accepted:
+            loop = QEventLoop()
+            self.viewer.page().print(printer, lambda _success: loop.quit())
+            loop.exec()
 
     def _on_print_preview(self) -> None:
         """Handle File > Print Preview action."""

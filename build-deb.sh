@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_NAME="md-reader"
-VERSION="0.1.0"
+VERSION="0.5.0"
 ARCH="all"
 INSTALL_DIR="/opt/${APP_NAME}"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
@@ -57,11 +57,12 @@ Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: python3 (>= 3.10), python3-pyqt6, python3-pyqt6.qtwebengine, python3-markdown2, python3-pygments
 Maintainer: tio <tio@local>
-Description: A simple GUI markdown viewer
+Description: A feature-rich GUI markdown viewer
  Markdown Reader is a desktop application for viewing markdown files
- with syntax highlighting, table of contents navigation, search,
- and light/dark theme support. Built with PyQt6.
-Homepage: https://github.com/tio/md-reader
+ with syntax highlighting, table of contents, search, bookmarks,
+ Mermaid diagrams, LaTeX math, export (HTML/PDF), print preview,
+ presentation mode, split view, and multiple themes. Built with PyQt6.
+Homepage: https://github.com/TioGlo/md_reader
 EOF
 
 # --- Create postinst to update desktop database ---
