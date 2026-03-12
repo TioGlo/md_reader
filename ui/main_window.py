@@ -10,6 +10,7 @@ from config.settings_manager import SettingsManager
 from config.theme_manager import ThemeManager
 from ui.viewer_widget import ViewerWidget
 from ui.menu_bar import MenuBar
+from ui.export_manager import ExportManager
 from ui.toc_widget import TOCWidget
 from ui.search_dialog import SearchDialog
 from ui.status_bar import StatusBarManager
@@ -27,6 +28,7 @@ class MainWindow(QMainWindow):
         self.document_manager = DocumentManager()
         self.settings = SettingsManager()
         self.theme_manager = ThemeManager()
+        self.export_manager = ExportManager()
 
         # Display state
         self.current_theme = self.settings.get("ui.theme", "light")
@@ -82,6 +84,12 @@ class MainWindow(QMainWindow):
             on_open=self._on_open_file,
             on_recent_file=self._on_open_recent_file,
             on_exit=self.close,
+        )
+
+        # Set up export actions in File menu
+        self.menu_bar_manager.setup_export_menu(
+            on_export_html=self._on_export_html,
+            on_export_pdf=self._on_export_pdf,
         )
 
         # Update recent files menu
@@ -199,6 +207,89 @@ class MainWindow(QMainWindow):
         """
         self._load_file(file_path)
 
+    def _on_export_html(self) -> None:
+        """Handle File > Export as HTML action."""
+        if not self.document_manager.current_content:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before exporting.",
+            )
+            return
+
+        default_name = ""
+        current_path = self.document_manager.get_current_file_path()
+        if current_path:
+            from pathlib import Path
+            default_name = str(Path(current_path).with_suffix(".html"))
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export as HTML",
+            default_name,
+            "HTML Files (*.html);;All Files (*)",
+        )
+
+        if not file_path:
+            return
+
+        try:
+            html_content = self.renderer.render(self.document_manager.current_content)
+            self.export_manager.export_html(html_content, file_path)
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"HTML file saved to:\n{file_path}",
+            )
+        except OSError as e:
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Could not save HTML file:\n{file_path}\n\nError: {e}",
+            )
+
+    def _on_export_pdf(self) -> None:
+        """Handle File > Export as PDF action."""
+        if not self.document_manager.current_content:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before exporting.",
+            )
+            return
+
+        default_name = ""
+        current_path = self.document_manager.get_current_file_path()
+        if current_path:
+            from pathlib import Path
+            default_name = str(Path(current_path).with_suffix(".pdf"))
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export as PDF",
+            default_name,
+            "PDF Files (*.pdf);;All Files (*)",
+        )
+
+        if not file_path:
+            return
+
+        def _on_pdf_finished(success: bool) -> None:
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"PDF file saved to:\n{file_path}",
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Export Failed",
+                    f"Could not save PDF file:\n{file_path}",
+                )
+
+        self.export_manager.export_pdf(self.viewer, file_path, callback=_on_pdf_finished)
+
     def _save_scroll_position(self) -> None:
         """Save scroll position for the current file."""
         file_path = self.document_manager.get_current_file_path()
@@ -310,7 +401,11 @@ class MainWindow(QMainWindow):
         # Load and set theme
         theme_css = self.theme_manager.get_theme_css(self.current_theme)
         self.renderer.set_theme_css(theme_css)
+        self.renderer.set_theme_name(self.current_theme)
         self.renderer.set_font_size(self.font_size)
+
+        # Apply theme to Qt widgets (TOC, status bar, menu bar)
+        self._apply_widget_theme()
 
         # Set zoom level
         self.viewer.set_zoom_level(self.zoom_level)
@@ -319,6 +414,90 @@ class MainWindow(QMainWindow):
         if self.document_manager.current_content:
             html = self.renderer.render(self.document_manager.current_content)
             self.viewer.load_html_content(html)
+
+    def _apply_widget_theme(self) -> None:
+        """Apply the current theme to all Qt widgets."""
+        if self.current_theme == "dark":
+            widget_style = """
+                QMainWindow { background-color: #0d1117; }
+                QMenuBar { background-color: #161b22; color: #c9d1d9; }
+                QMenuBar::item:selected { background-color: #30363d; }
+                QMenu { background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; }
+                QMenu::item:selected { background-color: #30363d; }
+                QMenu::separator { background-color: #30363d; height: 1px; }
+                QTreeWidget {
+                    background-color: #0d1117;
+                    color: #c9d1d9;
+                    border: none;
+                    font-size: 13px;
+                }
+                QTreeWidget::item:hover { background-color: #161b22; }
+                QTreeWidget::item:selected { background-color: #1f6feb; color: #f0f6fc; }
+                QSplitter::handle { background-color: #30363d; }
+                QStatusBar { background-color: #161b22; color: #8b949e; }
+                QStatusBar QLabel { color: #8b949e; }
+            """
+        elif self.current_theme == "sepia":
+            widget_style = """
+                QMainWindow { background-color: #f4ecd8; }
+                QMenuBar { background-color: #efe6d0; color: #5b4636; }
+                QMenuBar::item:selected { background-color: #d4c5a9; }
+                QMenu { background-color: #f4ecd8; color: #5b4636; border: 1px solid #d4c5a9; }
+                QMenu::item:selected { background-color: #8b4513; color: #f4ecd8; }
+                QMenu::separator { background-color: #d4c5a9; height: 1px; }
+                QTreeWidget {
+                    background-color: #f4ecd8;
+                    color: #5b4636;
+                    border: none;
+                    font-size: 13px;
+                }
+                QTreeWidget::item:hover { background-color: #efe6d0; }
+                QTreeWidget::item:selected { background-color: #8b4513; color: #f4ecd8; }
+                QSplitter::handle { background-color: #d4c5a9; }
+                QStatusBar { background-color: #efe6d0; color: #7a6652; }
+                QStatusBar QLabel { color: #7a6652; }
+            """
+        elif self.current_theme == "high_contrast":
+            widget_style = """
+                QMainWindow { background-color: #000000; }
+                QMenuBar { background-color: #1a1a1a; color: #ffffff; }
+                QMenuBar::item:selected { background-color: #333333; }
+                QMenu { background-color: #1a1a1a; color: #ffffff; border: 1px solid #666666; }
+                QMenu::item:selected { background-color: #ffff00; color: #000000; }
+                QMenu::separator { background-color: #666666; height: 1px; }
+                QTreeWidget {
+                    background-color: #000000;
+                    color: #ffffff;
+                    border: none;
+                    font-size: 13px;
+                }
+                QTreeWidget::item:hover { background-color: #1a1a1a; }
+                QTreeWidget::item:selected { background-color: #ffff00; color: #000000; }
+                QSplitter::handle { background-color: #666666; }
+                QStatusBar { background-color: #1a1a1a; color: #e0e0e0; }
+                QStatusBar QLabel { color: #e0e0e0; }
+            """
+        else:
+            widget_style = """
+                QMainWindow { background-color: #ffffff; }
+                QMenuBar { background-color: #f6f8fa; color: #24292e; }
+                QMenuBar::item:selected { background-color: #e1e4e8; }
+                QMenu { background-color: #ffffff; color: #24292e; border: 1px solid #e1e4e8; }
+                QMenu::item:selected { background-color: #0366d6; color: #ffffff; }
+                QMenu::separator { background-color: #e1e4e8; height: 1px; }
+                QTreeWidget {
+                    background-color: #ffffff;
+                    color: #24292e;
+                    border: none;
+                    font-size: 13px;
+                }
+                QTreeWidget::item:hover { background-color: #f6f8fa; }
+                QTreeWidget::item:selected { background-color: #0366d6; color: #ffffff; }
+                QSplitter::handle { background-color: #e1e4e8; }
+                QStatusBar { background-color: #f6f8fa; color: #586069; }
+                QStatusBar QLabel { color: #586069; }
+            """
+        self.setStyleSheet(widget_style)
 
     def _on_increase_font(self) -> None:
         """Increase font size."""

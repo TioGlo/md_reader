@@ -1,5 +1,7 @@
 """Markdown to HTML rendering engine."""
 
+import re
+
 import markdown2
 from pygments.formatters import HtmlFormatter
 
@@ -8,6 +10,13 @@ from core.toc_generator import TOCGenerator
 
 class MarkdownRenderer:
     """Converts markdown text to HTML."""
+
+    # Regex to extract mermaid fenced code blocks from raw markdown before
+    # markdown2 processes them (markdown2 strips the language class).
+    _MERMAID_FENCE_RE = re.compile(
+        r'```mermaid\s*\n(.*?)```',
+        re.DOTALL,
+    )
 
     def __init__(self) -> None:
         """Initialize the renderer with basic settings."""
@@ -24,6 +33,7 @@ class MarkdownRenderer:
         # Current rendering settings
         self.theme_css = ""
         self.font_size = 14
+        self.current_theme_name = "light"
 
         # TOC generator for header anchors
         self.toc_generator = TOCGenerator()
@@ -49,6 +59,17 @@ class MarkdownRenderer:
         """
         self.font_size = font_size
 
+    def set_theme_name(self, theme_name: str) -> None:
+        """
+        Set the current theme name for theme-aware rendering.
+
+        This affects Mermaid diagram theming (light vs dark).
+
+        Args:
+            theme_name: Name of the active theme (e.g. 'light', 'dark')
+        """
+        self.current_theme_name = theme_name
+
     def render(self, markdown_text: str) -> str:
         """
         Convert markdown text to HTML.
@@ -65,11 +86,32 @@ class MarkdownRenderer:
         # Inject anchors into headers for TOC linking
         markdown_with_anchors = self.toc_generator.inject_anchors(markdown_text)
 
+        # Extract mermaid blocks before markdown2 processing (it strips language classes)
+        mermaid_blocks: list[str] = []
+        def _replace_mermaid(match: re.Match) -> str:
+            mermaid_blocks.append(match.group(1).strip())
+            return f"<!--MERMAID_PLACEHOLDER_{len(mermaid_blocks) - 1}-->"
+
+        markdown_with_anchors = self._MERMAID_FENCE_RE.sub(
+            _replace_mermaid, markdown_with_anchors
+        )
+
         # Convert markdown to HTML with syntax highlighting enabled
         html_content = markdown2.markdown(
             markdown_with_anchors,
             extras=self.extras + ["fenced-code-blocks", "code-color"]
         )
+
+        # Re-inject mermaid blocks as <div class="mermaid"> elements
+        for i, block in enumerate(mermaid_blocks):
+            placeholder = f"<!--MERMAID_PLACEHOLDER_{i}-->"
+            html_content = html_content.replace(
+                placeholder,
+                f'<div class="mermaid">\n{block}\n</div>'
+            )
+
+        # Select mermaid theme based on current application theme
+        mermaid_theme = "dark" if self.current_theme_name == "dark" else "default"
 
         # Wrap in a complete HTML document with theme CSS and base styling
         full_html = f"""
@@ -77,6 +119,15 @@ class MarkdownRenderer:
 <html>
 <head>
     <meta charset="UTF-8">
+    <!-- KaTeX for LaTeX math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
+    <!-- Mermaid for diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({{startOnLoad: true, theme: '{mermaid_theme}'}});
+    </script>
     <style>
         /* Base styling */
         body {{
@@ -156,6 +207,11 @@ class MarkdownRenderer:
             border-top: 2px solid;
             margin: 24px 0;
         }}
+        /* Mermaid diagram container */
+        .mermaid {{
+            text-align: center;
+            margin: 16px 0;
+        }}
 
         /* Theme-specific colors */
         {self.theme_css}
@@ -163,6 +219,16 @@ class MarkdownRenderer:
 </head>
 <body>
 {html_content}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {{
+        renderMathInElement(document.body, {{
+            delimiters: [
+                {{left: "$$", right: "$$", display: true}},
+                {{left: "$", right: "$", display: false}}
+            ]
+        }});
+    }});
+</script>
 </body>
 </html>
 """

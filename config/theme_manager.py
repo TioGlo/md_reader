@@ -10,7 +10,7 @@ class ThemeManager:
     def __init__(self) -> None:
         """Initialize the theme manager."""
         self.themes_dir = Path(__file__).parent.parent / "resources" / "themes"
-        self.available_themes = ["light", "dark"]
+        self.available_themes = ["light", "dark", "sepia", "high_contrast"]
         self.current_theme = "light"
 
     def get_theme_css(self, theme_name: str) -> str:

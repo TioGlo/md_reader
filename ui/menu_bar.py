@@ -19,6 +19,7 @@ class MenuBar:
         self.recent_file_actions: list[QAction] = []
         self.theme_actions: dict[str, QAction] = {}
         self.toc_toggle_action: QAction | None = None
+        self.file_menu: QMenu | None = None
 
     def setup_menus(
         self,
@@ -36,6 +37,7 @@ class MenuBar:
         """
         # File menu
         file_menu = self.menu_bar.addMenu("&File")
+        self.file_menu = file_menu
 
         # Open action
         open_action = QAction("&Open...", self.menu_bar)
@@ -58,6 +60,48 @@ class MenuBar:
         exit_action.setStatusTip("Exit the application")
         exit_action.triggered.connect(on_exit)
         file_menu.addAction(exit_action)
+
+    def setup_export_menu(
+        self,
+        on_export_html: Callable[[], None],
+        on_export_pdf: Callable[[], None],
+    ) -> None:
+        """
+        Add export actions to the File menu after the Open action.
+
+        Args:
+            on_export_html: Callback for Export as HTML
+            on_export_pdf: Callback for Export as PDF
+        """
+        if self.file_menu is None:
+            return
+
+        # Get the list of existing actions to insert before the first separator
+        actions = self.file_menu.actions()
+
+        # Find the first separator (after Open action)
+        insert_before = None
+        for action in actions:
+            if action.isSeparator():
+                insert_before = action
+                break
+
+        export_html_action = QAction("Export as &HTML...", self.menu_bar)
+        export_html_action.setShortcut("Ctrl+Shift+H")
+        export_html_action.setStatusTip("Export the document as a standalone HTML file")
+        export_html_action.triggered.connect(on_export_html)
+
+        export_pdf_action = QAction("Export as &PDF...", self.menu_bar)
+        export_pdf_action.setShortcut("Ctrl+Shift+P")
+        export_pdf_action.setStatusTip("Export the document as a PDF file")
+        export_pdf_action.triggered.connect(on_export_pdf)
+
+        if insert_before is not None:
+            self.file_menu.insertAction(insert_before, export_html_action)
+            self.file_menu.insertAction(insert_before, export_pdf_action)
+        else:
+            self.file_menu.addAction(export_html_action)
+            self.file_menu.addAction(export_pdf_action)
 
     def update_recent_files(
         self, recent_files: list[str], on_recent_file: Callable[[str], None]
