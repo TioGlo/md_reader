@@ -2,20 +2,43 @@
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage
-from PyQt6.QtCore import QUrl
+from PyQt6.QtCore import QUrl, pyqtSignal, QTimer
 from PyQt6.QtGui import QDesktopServices
+
+
+class _ViewerPage(QWebEnginePage):
+    """Custom page that intercepts file:// navigations from drag & drop."""
+
+    file_dropped = pyqtSignal(str)
+
+    def acceptNavigationRequest(self, url: QUrl, nav_type: QWebEnginePage.NavigationType, is_main_frame: bool) -> bool:
+        """Intercept navigation requests to catch dropped files and external links."""
+        if url.isLocalFile():
+            file_path = url.toLocalFile()
+            if file_path.lower().endswith((".md", ".markdown", ".txt")):
+                # Defer the signal to avoid re-entrant page loading
+                QTimer.singleShot(0, lambda p=file_path: self.file_dropped.emit(p))
+                return False
+        # Block external navigations — open in system browser instead
+        if url.scheme() in ("http", "https"):
+            QDesktopServices.openUrl(url)
+            return False
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
 class ViewerWidget(QWebEngineView):
     """HTML viewer for rendered markdown content."""
 
+    file_dropped = pyqtSignal(str)
+
     def __init__(self) -> None:
         """Initialize the viewer widget."""
         super().__init__()
 
-        # Set up custom page to handle link clicks
-        page = QWebEnginePage(self)
+        # Set up custom page that intercepts dropped file navigations
+        page = _ViewerPage(self)
         page.linkHovered.connect(self._on_link_hovered)
+        page.file_dropped.connect(self.file_dropped)
         self.setPage(page)
 
         # Enable dev tools for debugging (can be removed in production)

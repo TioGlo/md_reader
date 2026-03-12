@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
 
         # Create viewer widget
         self.viewer = ViewerWidget()
+        self.viewer.file_dropped.connect(self._load_file)
 
         # Add widgets to splitter
         self.splitter.addWidget(self.toc_widget)
