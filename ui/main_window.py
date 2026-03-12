@@ -1,7 +1,8 @@
 """Main application window."""
 
-from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QSplitter, QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QSplitter
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction, QKeySequence
 
 from core.markdown_renderer import MarkdownRenderer
 from core.document_manager import DocumentManager
@@ -11,6 +12,7 @@ from ui.viewer_widget import ViewerWidget
 from ui.menu_bar import MenuBar
 from ui.toc_widget import TOCWidget
 from ui.search_dialog import SearchDialog
+from ui.status_bar import StatusBarManager
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +73,9 @@ class MainWindow(QMainWindow):
         # Set splitter as central widget
         self.setCentralWidget(self.splitter)
 
+        # Set up status bar
+        self.status_bar_manager = StatusBarManager(self.statusBar())
+
         # Set up menu bar
         self.menu_bar_manager = MenuBar(self.menuBar())
         self.menu_bar_manager.setup_menus(
@@ -103,6 +108,14 @@ class MainWindow(QMainWindow):
         self.menu_bar_manager.add_toc_toggle(
             view_menu=view_menu, on_toggle=self._on_toc_toggle, is_visible=self.toc_visible
         )
+
+        # Add fullscreen toggle to View menu
+        view_menu.addSeparator()
+        self.fullscreen_action = QAction("&Fullscreen", self)
+        self.fullscreen_action.setShortcut(QKeySequence("F11"))
+        self.fullscreen_action.setCheckable(True)
+        self.fullscreen_action.triggered.connect(self._on_toggle_fullscreen)
+        view_menu.addAction(self.fullscreen_action)
 
         # Show welcome message
         self._show_welcome_message()
@@ -153,7 +166,8 @@ class MainWindow(QMainWindow):
     <div class="welcome">
         <h1>Welcome to Markdown Reader</h1>
         <p>To get started, open a markdown file:</p>
-        <p><strong>File → Open</strong> or press <span class="shortcut">Ctrl+O</span></p>
+        <p><strong>File &rarr; Open</strong> or press <span class="shortcut">Ctrl+O</span></p>
+        <p>You can also drag and drop a file onto this window.</p>
     </div>
 </body>
 </html>
@@ -181,6 +195,41 @@ class MainWindow(QMainWindow):
         """
         self._load_file(file_path)
 
+    def _save_scroll_position(self) -> None:
+        """Save scroll position for the current file."""
+        file_path = self.document_manager.get_current_file_path()
+        if file_path:
+            self.viewer.page().runJavaScript(
+                "window.scrollY",
+                lambda pos: self._store_scroll_position(file_path, pos)
+            )
+
+    def _store_scroll_position(self, file_path: str, position: float | int | None) -> None:
+        """Store scroll position in settings."""
+        if position is not None:
+            scroll_positions = self.settings.get("scroll_positions", {})
+            scroll_positions[file_path] = int(position)
+            self.settings.set("scroll_positions", scroll_positions)
+            self.settings.save_settings()
+
+    def _restore_scroll_position(self, file_path: str) -> None:
+        """Restore scroll position for a file after content loads."""
+        scroll_positions = self.settings.get("scroll_positions", {})
+        position = scroll_positions.get(file_path, 0)
+        if position > 0:
+            self.viewer.page().loadFinished.connect(
+                lambda ok, pos=position: self._do_scroll_restore(pos)
+            )
+
+    def _do_scroll_restore(self, position: int) -> None:
+        """Execute the scroll restore after page load."""
+        self.viewer.page().runJavaScript(f"window.scrollTo(0, {position})")
+        # Disconnect to avoid restoring on every future load
+        try:
+            self.viewer.page().loadFinished.disconnect(self._do_scroll_restore)
+        except TypeError:
+            pass
+
     def _load_file(self, file_path: str) -> None:
         """
         Load and display a markdown file.
@@ -189,6 +238,9 @@ class MainWindow(QMainWindow):
             file_path: Path to the file to load
         """
         try:
+            # Save scroll position of current file before loading new one
+            self._save_scroll_position()
+
             # Read the file
             content = self.document_manager.open_file(file_path)
 
@@ -197,6 +249,9 @@ class MainWindow(QMainWindow):
 
             # Display in viewer
             self.viewer.load_html_content(html)
+
+            # Restore scroll position for this file
+            self._restore_scroll_position(file_path)
 
             # Update window title
             file_name = self.document_manager.get_current_file_name()
@@ -212,6 +267,9 @@ class MainWindow(QMainWindow):
             # Update TOC
             toc_items = self.renderer.get_toc()
             self.toc_widget.update_toc(toc_items)
+
+            # Update status bar
+            self.status_bar_manager.update_stats(content, file_path)
 
         except FileNotFoundError:
             QMessageBox.warning(
@@ -335,6 +393,28 @@ class MainWindow(QMainWindow):
         self.settings.set("ui.toc_visible", is_visible)
         self.settings.save_settings()
 
+    def _on_toggle_fullscreen(self, checked: bool) -> None:
+        """Toggle fullscreen reading mode."""
+        if checked:
+            self.menuBar().hide()
+            self.statusBar().hide()
+            self.toc_widget.hide()
+            self.showFullScreen()
+        else:
+            self.menuBar().show()
+            self.statusBar().show()
+            if self.toc_visible:
+                self.toc_widget.show()
+            self.showNormal()
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press events for fullscreen exit."""
+        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+            self.fullscreen_action.setChecked(False)
+            self._on_toggle_fullscreen(False)
+        else:
+            super().keyPressEvent(event)
+
     def _on_find(self) -> None:
         """Handle Find action (Ctrl+F)."""
         # Create search dialog if it doesn't exist
@@ -373,8 +453,16 @@ class MainWindow(QMainWindow):
         Args:
             event: Close event
         """
+        # Save scroll position of current file
+        file_path = self.document_manager.get_current_file_path()
+        if file_path:
+            self.viewer.page().runJavaScript(
+                "window.scrollY",
+                lambda pos: self._store_scroll_position(file_path, pos)
+            )
+
         # Save window geometry
-        if not self.isMaximized():
+        if not self.isMaximized() and not self.isFullScreen():
             self.settings.set("window.width", self.width())
             self.settings.set("window.height", self.height())
             self.settings.set("window.x", self.x())
