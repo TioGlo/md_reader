@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
 
         from PyQt6.QtPrintSupport import QPrintDialog
 
-        printer = QPrinter(QPrinter.Mode.HighResolution)
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintDialog(printer, self)
         if dialog.exec() == QPrintDialog.DialogCode.Accepted:
             loop = QEventLoop()
@@ -395,7 +395,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        printer = QPrinter(QPrinter.Mode.HighResolution)
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintPreviewDialog(printer, self)
         dialog.setWindowTitle("Print Preview")
 
