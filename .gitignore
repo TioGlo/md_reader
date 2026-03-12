@@ -80,3 +80,6 @@ Thumbs.db
 
 # User settings (these are per-user, not for version control)
 .config/
+
+# Claude Code worktrees
+.claude/worktrees/

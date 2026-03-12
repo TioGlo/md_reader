@@ -1,8 +1,12 @@
 """Main application window."""
 
-from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QSplitter
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QMainWindow, QFileDialog, QInputDialog, QMessageBox,
+    QSplitter, QWidget, QVBoxLayout, QPushButton,
+)
+from PyQt6.QtCore import Qt, QEventLoop
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.markdown_renderer import MarkdownRenderer
 from core.document_manager import DocumentManager
@@ -14,6 +18,8 @@ from ui.export_manager import ExportManager
 from ui.toc_widget import TOCWidget
 from ui.search_dialog import SearchDialog
 from ui.status_bar import StatusBarManager
+from ui.bookmarks_widget import BookmarksWidget
+from ui.presentation_mode import PresentationWindow
 
 
 class MainWindow(QMainWindow):
@@ -37,8 +43,18 @@ class MainWindow(QMainWindow):
         self.toc_visible = self.settings.get("ui.toc_visible", True)
         self.toc_width = self.settings.get("ui.toc_width", 250)
 
+        # Bookmarks state
+        self.bookmarks_visible = self.settings.get("ui.bookmarks_visible", False)
+
+        # Split view state
+        self.split_view_active = False
+        self.secondary_doc_manager = DocumentManager()
+
         # Search dialog
         self.search_dialog: SearchDialog | None = None
+
+        # Presentation window
+        self._presentation_window: PresentationWindow | None = None
 
         # Set up UI
         self._init_ui()
@@ -62,15 +78,46 @@ class MainWindow(QMainWindow):
         self.viewer = ViewerWidget()
         self.viewer.file_dropped.connect(self._load_file)
 
-        # Add widgets to splitter
+        # Create secondary viewer panel (for split view)
+        self.secondary_panel = QWidget()
+        secondary_layout = QVBoxLayout(self.secondary_panel)
+        secondary_layout.setContentsMargins(0, 0, 0, 0)
+        secondary_layout.setSpacing(0)
+
+        self.secondary_open_btn = QPushButton("Open File...")
+        self.secondary_open_btn.clicked.connect(self._on_open_file_secondary)
+        secondary_layout.addWidget(self.secondary_open_btn)
+
+        self.secondary_viewer = ViewerWidget()
+        self.secondary_viewer.file_dropped.connect(self._load_file_secondary)
+        secondary_layout.addWidget(self.secondary_viewer)
+
+        # Inner splitter holds primary and secondary viewers
+        self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.viewer_splitter.addWidget(self.viewer)
+        self.viewer_splitter.addWidget(self.secondary_panel)
+        self.secondary_panel.setVisible(False)
+
+        # Create bookmarks widget
+        self.bookmarks_widget = BookmarksWidget()
+        self.bookmarks_widget.setMinimumWidth(150)
+        self.bookmarks_widget.setMaximumWidth(400)
+        self.bookmarks_widget.bookmark_clicked.connect(self._on_bookmark_clicked)
+
+        # Add widgets to outer splitter
         self.splitter.addWidget(self.toc_widget)
-        self.splitter.addWidget(self.viewer)
+        self.splitter.addWidget(self.viewer_splitter)
+        self.splitter.addWidget(self.bookmarks_widget)
 
         # Set splitter sizes
-        self.splitter.setSizes([self.toc_width, 1000 - self.toc_width])
+        bookmarks_width = 250 if self.bookmarks_visible else 0
+        self.splitter.setSizes([self.toc_width, 1000 - self.toc_width - bookmarks_width, bookmarks_width])
 
         # Set TOC visibility
         self.toc_widget.setVisible(self.toc_visible)
+
+        # Set bookmarks panel visibility
+        self.bookmarks_widget.setVisible(self.bookmarks_visible)
 
         # Set splitter as central widget
         self.setCentralWidget(self.splitter)
@@ -90,6 +137,11 @@ class MainWindow(QMainWindow):
         self.menu_bar_manager.setup_export_menu(
             on_export_html=self._on_export_html,
             on_export_pdf=self._on_export_pdf,
+        )
+
+        # Set up print preview action in File menu
+        self.menu_bar_manager.setup_print_menu(
+            on_print_preview=self._on_print_preview,
         )
 
         # Update recent files menu
@@ -117,6 +169,13 @@ class MainWindow(QMainWindow):
             view_menu=view_menu, on_toggle=self._on_toc_toggle, is_visible=self.toc_visible
         )
 
+        # Add split view toggle to View menu
+        self.menu_bar_manager.add_split_view_toggle(
+            view_menu=view_menu,
+            on_toggle=self._on_split_view_toggle,
+            is_active=self.split_view_active,
+        )
+
         # Add fullscreen toggle to View menu
         view_menu.addSeparator()
         self.fullscreen_action = QAction("&Fullscreen", self)
@@ -128,6 +187,22 @@ class MainWindow(QMainWindow):
         # Escape shortcut to exit fullscreen
         self.escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self.escape_shortcut.activated.connect(self._on_escape)
+
+        # Set up Bookmarks menu
+        self.menu_bar_manager.setup_bookmarks_menu(
+            on_add_bookmark=self._on_add_bookmark,
+            on_toggle_bookmarks_panel=self._on_toggle_bookmarks_panel,
+            on_clear_bookmarks=self._on_clear_bookmarks,
+            panel_visible=self.bookmarks_visible,
+        )
+
+        # Set up Presentation Mode in View menu
+        self.menu_bar_manager.setup_presentation_menu(
+            on_present=self._on_presentation_mode,
+        )
+
+        # Load existing bookmarks into the panel
+        self._refresh_bookmarks_display()
 
         # Show welcome message
         self._show_welcome_message()
@@ -290,6 +365,29 @@ class MainWindow(QMainWindow):
 
         self.export_manager.export_pdf(self.viewer, file_path, callback=_on_pdf_finished)
 
+    def _on_print_preview(self) -> None:
+        """Handle File > Print Preview action."""
+        if not self.document_manager.current_content:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before printing.",
+            )
+            return
+
+        printer = QPrinter(QPrinter.Mode.HighResolution)
+        dialog = QPrintPreviewDialog(printer, self)
+        dialog.setWindowTitle("Print Preview")
+
+        def handle_paint_requested(req_printer: QPrinter) -> None:
+            """Render the web page to the printer synchronously using an event loop."""
+            loop = QEventLoop()
+            self.viewer.page().print(req_printer, lambda _success: loop.quit())
+            loop.exec()
+
+        dialog.paintRequested.connect(handle_paint_requested)
+        dialog.exec()
+
     def _save_scroll_position(self) -> None:
         """Save scroll position for the current file."""
         file_path = self.document_manager.get_current_file_path()
@@ -409,11 +507,17 @@ class MainWindow(QMainWindow):
 
         # Set zoom level
         self.viewer.set_zoom_level(self.zoom_level)
+        self.secondary_viewer.set_zoom_level(self.zoom_level)
 
         # Re-render current document if one is loaded
         if self.document_manager.current_content:
             html = self.renderer.render(self.document_manager.current_content)
             self.viewer.load_html_content(html)
+
+        # Re-render secondary document if one is loaded
+        if self.secondary_doc_manager.current_content:
+            html = self.renderer.render(self.secondary_doc_manager.current_content)
+            self.secondary_viewer.load_html_content(html)
 
     def _apply_widget_theme(self) -> None:
         """Apply the current theme to all Qt widgets."""
@@ -436,6 +540,8 @@ class MainWindow(QMainWindow):
                 QSplitter::handle { background-color: #30363d; }
                 QStatusBar { background-color: #161b22; color: #8b949e; }
                 QStatusBar QLabel { color: #8b949e; }
+                QPushButton { background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 4px 12px; }
+                QPushButton:hover { background-color: #30363d; }
             """
         elif self.current_theme == "sepia":
             widget_style = """
@@ -456,6 +562,8 @@ class MainWindow(QMainWindow):
                 QSplitter::handle { background-color: #d4c5a9; }
                 QStatusBar { background-color: #efe6d0; color: #7a6652; }
                 QStatusBar QLabel { color: #7a6652; }
+                QPushButton { background-color: #efe6d0; color: #5b4636; border: 1px solid #d4c5a9; padding: 4px 12px; }
+                QPushButton:hover { background-color: #d4c5a9; }
             """
         elif self.current_theme == "high_contrast":
             widget_style = """
@@ -476,6 +584,8 @@ class MainWindow(QMainWindow):
                 QSplitter::handle { background-color: #666666; }
                 QStatusBar { background-color: #1a1a1a; color: #e0e0e0; }
                 QStatusBar QLabel { color: #e0e0e0; }
+                QPushButton { background-color: #1a1a1a; color: #ffffff; border: 1px solid #666666; padding: 4px 12px; }
+                QPushButton:hover { background-color: #333333; }
             """
         else:
             widget_style = """
@@ -496,6 +606,8 @@ class MainWindow(QMainWindow):
                 QSplitter::handle { background-color: #e1e4e8; }
                 QStatusBar { background-color: #f6f8fa; color: #586069; }
                 QStatusBar QLabel { color: #586069; }
+                QPushButton { background-color: #f6f8fa; color: #24292e; border: 1px solid #e1e4e8; padding: 4px 12px; }
+                QPushButton:hover { background-color: #e1e4e8; }
             """
         self.setStyleSheet(widget_style)
 
@@ -626,6 +738,224 @@ class MainWindow(QMainWindow):
             case_sensitive: Whether search is case-sensitive
         """
         self.viewer.find_text(search_text, case_sensitive, backward=True)
+
+    # ------------------------------------------------------------------
+    # Bookmarks
+    # ------------------------------------------------------------------
+
+    def _refresh_bookmarks_display(self) -> None:
+        """Reload bookmarks from settings into the bookmarks widget."""
+        bookmarks = self.settings.get("bookmarks", [])
+        self.bookmarks_widget.update_bookmarks(bookmarks)
+
+    def _on_add_bookmark(self) -> None:
+        """Handle Bookmarks > Add Bookmark action."""
+        file_path = self.document_manager.get_current_file_path()
+        if not file_path:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before adding a bookmark.",
+            )
+            return
+
+        # JavaScript to find the nearest heading above the current scroll position
+        js_code = """
+        (function() {
+            var scrollY = window.scrollY;
+            var headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            var nearest = null;
+            for (var i = 0; i < headings.length; i++) {
+                var rect = headings[i].getBoundingClientRect();
+                var absTop = rect.top + window.scrollY;
+                if (absTop <= scrollY + 50) {
+                    nearest = headings[i];
+                } else {
+                    break;
+                }
+            }
+            return {
+                anchor: nearest ? (nearest.id || '') : '',
+                heading: nearest ? nearest.textContent : '',
+                scrollY: scrollY
+            };
+        })()
+        """
+        self.viewer.page().runJavaScript(
+            js_code,
+            lambda result: self._finish_add_bookmark(file_path, result),
+        )
+
+    def _finish_add_bookmark(self, file_path: str, js_result: dict | None) -> None:
+        """
+        Complete the add-bookmark flow after JavaScript returns position info.
+
+        Args:
+            file_path: Path of the currently open file
+            js_result: Dict with 'anchor', 'heading', 'scrollY' from JS
+        """
+        default_title = ""
+        anchor = ""
+        scroll_y = 0
+
+        if js_result and isinstance(js_result, dict):
+            default_title = js_result.get("heading", "")
+            anchor = js_result.get("anchor", "")
+            scroll_y = js_result.get("scrollY", 0)
+
+        if not default_title:
+            from pathlib import Path
+            default_title = Path(file_path).stem
+
+        title, ok = QInputDialog.getText(
+            self,
+            "Add Bookmark",
+            "Bookmark title:",
+            text=default_title,
+        )
+
+        if not ok or not title.strip():
+            return
+
+        # If there is no heading anchor, store a scroll-position-based anchor
+        if not anchor:
+            anchor = f"__scroll_{int(scroll_y)}"
+
+        bookmark = {
+            "file": file_path,
+            "anchor": anchor,
+            "title": title.strip(),
+        }
+
+        bookmarks = self.settings.get("bookmarks", [])
+        bookmarks.append(bookmark)
+        self.settings.set("bookmarks", bookmarks)
+        self.settings.save_settings()
+
+        self._refresh_bookmarks_display()
+
+    def _on_toggle_bookmarks_panel(self, visible: bool) -> None:
+        """
+        Show or hide the bookmarks panel.
+
+        Args:
+            visible: Whether to show the panel
+        """
+        self.bookmarks_visible = visible
+        self.bookmarks_widget.setVisible(visible)
+        self.settings.set("ui.bookmarks_visible", visible)
+        self.settings.save_settings()
+
+    def _on_bookmark_clicked(self, file_path: str, anchor: str) -> None:
+        """
+        Handle a bookmark being clicked.
+
+        Args:
+            file_path: Path to the bookmarked file
+            anchor: Anchor ID or scroll-position marker to navigate to
+        """
+        current_file = self.document_manager.get_current_file_path()
+
+        if file_path != current_file:
+            self._load_file(file_path)
+            # After load finishes, scroll to the anchor
+            self.viewer.page().loadFinished.connect(
+                lambda ok, a=anchor: self._scroll_to_bookmark_anchor(a)
+            )
+        else:
+            self._scroll_to_bookmark_anchor(anchor)
+
+    def _scroll_to_bookmark_anchor(self, anchor: str) -> None:
+        """
+        Scroll to a bookmark anchor, handling both heading IDs and scroll offsets.
+
+        Args:
+            anchor: Either a heading element ID or '__scroll_<pixels>'
+        """
+        # Disconnect any one-shot loadFinished connection
+        try:
+            self.viewer.page().loadFinished.disconnect(self._scroll_to_bookmark_anchor)
+        except TypeError:
+            pass
+
+        if anchor.startswith("__scroll_"):
+            try:
+                offset = int(anchor.replace("__scroll_", ""))
+            except ValueError:
+                offset = 0
+            self.viewer.page().runJavaScript(f"window.scrollTo(0, {offset})")
+        else:
+            self.viewer.scroll_to_anchor(anchor)
+
+    def _on_clear_bookmarks(self) -> None:
+        """Handle Bookmarks > Clear All Bookmarks action."""
+        bookmarks = self.settings.get("bookmarks", [])
+        if not bookmarks:
+            QMessageBox.information(self, "Bookmarks", "There are no bookmarks to clear.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Clear Bookmarks",
+            f"Remove all {len(bookmarks)} bookmark(s)?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.settings.set("bookmarks", [])
+            self.settings.save_settings()
+            self._refresh_bookmarks_display()
+
+    # ------------------------------------------------------------------
+    # Split View
+    # ------------------------------------------------------------------
+
+    def _on_split_view_toggle(self, is_visible: bool) -> None:
+        """Toggle the split view secondary panel."""
+        self.split_view_active = is_visible
+        self.secondary_panel.setVisible(is_visible)
+        if is_visible:
+            self.viewer_splitter.setSizes([500, 500])
+
+    def _on_open_file_secondary(self) -> None:
+        """Open a file dialog for the secondary split view panel."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Markdown File (Split View)",
+            "",
+            "Markdown Files (*.md *.markdown *.txt);;All Files (*)",
+        )
+        if file_path:
+            self._load_file_secondary(file_path)
+
+    def _load_file_secondary(self, file_path: str) -> None:
+        """Load a markdown file into the secondary viewer."""
+        try:
+            content = self.secondary_doc_manager.open_file(file_path)
+            html = self.renderer.render(content)
+            self.secondary_viewer.load_html_content(html)
+
+            from pathlib import Path
+            self.secondary_open_btn.setText(Path(file_path).name)
+        except (FileNotFoundError, IOError) as e:
+            QMessageBox.critical(
+                self, "Error", f"Could not open file:\n{e}"
+            )
+
+    def _on_presentation_mode(self) -> None:
+        """Launch presentation mode for the current document."""
+        if not self.document_manager.current_content:
+            QMessageBox.warning(
+                self,
+                "No Document",
+                "Please open a markdown file before starting a presentation.",
+            )
+            return
+
+        html = self.renderer.render(self.document_manager.current_content)
+        self._presentation_window = PresentationWindow(html, parent=self)
+        self._presentation_window.showFullScreen()
 
     def closeEvent(self, event) -> None:
         """

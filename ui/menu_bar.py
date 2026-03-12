@@ -103,6 +103,37 @@ class MenuBar:
             self.file_menu.addAction(export_html_action)
             self.file_menu.addAction(export_pdf_action)
 
+    def setup_print_menu(
+        self,
+        on_print_preview: Callable[[], None],
+    ) -> None:
+        """
+        Add Print Preview action to the File menu after the export items.
+
+        Args:
+            on_print_preview: Callback for Print Preview action
+        """
+        if self.file_menu is None:
+            return
+
+        # Find the first separator (which comes after Open + export items)
+        actions = self.file_menu.actions()
+        insert_before = None
+        for action in actions:
+            if action.isSeparator():
+                insert_before = action
+                break
+
+        print_preview_action = QAction("Print Pre&view...", self.menu_bar)
+        print_preview_action.setShortcut("Ctrl+P")
+        print_preview_action.setStatusTip("Preview and print the current document")
+        print_preview_action.triggered.connect(on_print_preview)
+
+        if insert_before is not None:
+            self.file_menu.insertAction(insert_before, print_preview_action)
+        else:
+            self.file_menu.addAction(print_preview_action)
+
     def update_recent_files(
         self, recent_files: list[str], on_recent_file: Callable[[str], None]
     ) -> None:
@@ -248,6 +279,7 @@ class MenuBar:
             theme_menu.addAction(action)
             self.theme_actions[theme_name] = action
 
+        self.view_menu = view_menu
         return view_menu
 
     def update_theme_selection(self, theme_name: str) -> None:
@@ -309,3 +341,92 @@ class MenuBar:
         """
         if self.toc_toggle_action:
             self.toc_toggle_action.setChecked(is_visible)
+
+    def setup_bookmarks_menu(
+        self,
+        on_add_bookmark: Callable[[], None],
+        on_toggle_bookmarks_panel: Callable[[bool], None],
+        on_clear_bookmarks: Callable[[], None],
+        panel_visible: bool = False,
+    ) -> None:
+        """
+        Set up the Bookmarks menu.
+
+        Args:
+            on_add_bookmark: Callback for Add Bookmark action
+            on_toggle_bookmarks_panel: Callback for toggling bookmarks panel visibility
+            on_clear_bookmarks: Callback for clearing all bookmarks
+            panel_visible: Initial visibility state of the bookmarks panel
+        """
+        bookmarks_menu = self.menu_bar.addMenu("&Bookmarks")
+
+        # Add Bookmark action
+        add_bookmark_action = QAction("&Add Bookmark...", self.menu_bar)
+        add_bookmark_action.setShortcut("Ctrl+B")
+        add_bookmark_action.setStatusTip("Bookmark the current position")
+        add_bookmark_action.triggered.connect(on_add_bookmark)
+        bookmarks_menu.addAction(add_bookmark_action)
+
+        # Show Bookmarks Panel toggle
+        self.bookmarks_panel_action = QAction("Show &Bookmarks Panel", self.menu_bar)
+        self.bookmarks_panel_action.setShortcut("Ctrl+Shift+B")
+        self.bookmarks_panel_action.setCheckable(True)
+        self.bookmarks_panel_action.setChecked(panel_visible)
+        self.bookmarks_panel_action.setStatusTip("Toggle bookmarks panel visibility")
+        self.bookmarks_panel_action.triggered.connect(on_toggle_bookmarks_panel)
+        bookmarks_menu.addAction(self.bookmarks_panel_action)
+
+        bookmarks_menu.addSeparator()
+
+        # Clear All Bookmarks action
+        clear_bookmarks_action = QAction("&Clear All Bookmarks", self.menu_bar)
+        clear_bookmarks_action.setStatusTip("Remove all saved bookmarks")
+        clear_bookmarks_action.triggered.connect(on_clear_bookmarks)
+        bookmarks_menu.addAction(clear_bookmarks_action)
+
+    def update_bookmarks_panel_toggle(self, is_visible: bool) -> None:
+        """
+        Update the bookmarks panel toggle state.
+
+        Args:
+            is_visible: Whether the bookmarks panel is visible
+        """
+        if hasattr(self, "bookmarks_panel_action"):
+            self.bookmarks_panel_action.setChecked(is_visible)
+
+    def add_split_view_toggle(
+        self, view_menu: QMenu, on_toggle: Callable[[bool], None], is_active: bool
+    ) -> None:
+        """
+        Add split view toggle to View menu.
+
+        Args:
+            view_menu: The View menu to add the toggle to
+            on_toggle: Callback for split view toggle (receives visibility state)
+            is_active: Initial split view state
+        """
+        self.split_view_action = QAction("Split &View", self.menu_bar)
+        self.split_view_action.setCheckable(True)
+        self.split_view_action.setChecked(is_active)
+        self.split_view_action.setShortcut("Ctrl+Shift+S")
+        self.split_view_action.setStatusTip("Show a second viewer panel side by side")
+        self.split_view_action.triggered.connect(on_toggle)
+        view_menu.addAction(self.split_view_action)
+
+    def setup_presentation_menu(self, on_present: Callable[[], None]) -> None:
+        """
+        Add Presentation Mode action to the View menu.
+
+        Args:
+            on_present: Callback for starting presentation mode
+        """
+        if self.view_menu is None:
+            return
+
+        self.view_menu.addSeparator()
+
+        present_action = QAction("&Presentation Mode", self.menu_bar)
+        present_action.setShortcut("F5")
+        present_action.setStatusTip("Present the document as a slideshow")
+        present_action.triggered.connect(on_present)
+        self.view_menu.addAction(present_action)
