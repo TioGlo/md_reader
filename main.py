@@ -18,6 +18,12 @@ def main() -> None:
     window = MainWindow()
     window.show()
 
+    # Open file passed as command-line argument (e.g. from file manager)
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+        if os.path.isfile(file_path):
+            window._load_file(os.path.abspath(file_path))
+
     sys.exit(app.exec())
 
 
