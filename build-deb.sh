@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_NAME="md-reader"
-VERSION="0.5.0"
+VERSION="0.5.2"
 ARCH="all"
 INSTALL_DIR="/opt/${APP_NAME}"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
@@ -29,6 +29,10 @@ cp -r "${SCRIPT_DIR}/config" "${PKG_DIR}${INSTALL_DIR}/"
 cp -r "${SCRIPT_DIR}/ui" "${PKG_DIR}${INSTALL_DIR}/"
 cp -r "${SCRIPT_DIR}/resources" "${PKG_DIR}${INSTALL_DIR}/"
 
+# --- Bundle Python dependencies (newer than system packages) ---
+echo "==> Bundling Python dependencies"
+pip install --target "${PKG_DIR}${INSTALL_DIR}/vendor" --no-deps --quiet markdown2 pygments
+
 # Remove __pycache__ directories
 find "${PKG_DIR}${INSTALL_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
@@ -36,6 +40,7 @@ find "${PKG_DIR}${INSTALL_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>
 echo "==> Creating launcher script"
 cat > "${PKG_DIR}/usr/bin/${APP_NAME}" << 'LAUNCHER'
 #!/usr/bin/env bash
+export PYTHONPATH="/opt/md-reader/vendor:${PYTHONPATH:-}"
 exec python3 /opt/md-reader/main.py "$@"
 LAUNCHER
 chmod 755 "${PKG_DIR}/usr/bin/${APP_NAME}"
@@ -55,7 +60,7 @@ Section: text
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: python3 (>= 3.10), python3-pyqt6, python3-pyqt6.qtwebengine, python3-markdown2, python3-pygments
+Depends: python3 (>= 3.10), python3-pyqt6, python3-pyqt6.qtwebengine
 Maintainer: tio <tio@local>
 Description: A feature-rich GUI markdown viewer
  Markdown Reader is a desktop application for viewing markdown files
